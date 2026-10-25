@@ -31,8 +31,14 @@ button { color: inherit; }
 .brand-mark span:last-child { height: 19px; }
 .brand-name { font-size: 14px; letter-spacing: .16em; }
 .brand-name b { font-weight: 600; color: var(--lime); }
-.access-note { display: inline-flex; align-items: center; gap: 9px; color: #b7beae; font-size: 12px; letter-spacing: .05em; }
-.signal-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 12px rgba(197, 243, 106, .8); }
+.access-note { display: inline-flex; align-items: center; gap: 9px; color: #a0a499; font-size: 12px; letter-spacing: .05em; transition: color .18s; }
+.signal-dot { width: 7px; height: 7px; border-radius: 50%; background: #81877b; box-shadow: none; transition: background .18s, box-shadow .18s; }
+.access-note[data-state="checking"] .signal-dot { animation: connection-pulse 1.2s ease-in-out infinite; }
+.access-note[data-state="connected"] { color: #c1c9b6; }
+.access-note[data-state="connected"] .signal-dot { background: var(--lime); box-shadow: 0 0 12px rgba(197, 243, 106, .8); }
+.access-note[data-state="unavailable"] { color: #b5a59d; }
+.access-note[data-state="unavailable"] .signal-dot { background: #d09a74; box-shadow: 0 0 10px rgba(208, 154, 116, .32); }
+@keyframes connection-pulse { 50% { opacity: .38; } }
 .entry-layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 470px); gap: clamp(55px, 9vw, 140px); align-items: center; padding: 56px 5.5% 68px; }
 .intro-panel { min-width: 0; }
 .eyebrow { display: flex; align-items: center; gap: 11px; margin: 0 0 26px; color: var(--faint); font-size: 10px; letter-spacing: .17em; }

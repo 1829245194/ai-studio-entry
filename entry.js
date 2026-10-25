@@ -7,6 +7,9 @@
   const changeConnection = document.getElementById('change-connection');
   const error = document.getElementById('entry-error');
   const togglePassword = document.getElementById('toggle-password');
+  const connectionStatus = document.getElementById('connection-status');
+  const connectionStatusText = document.getElementById('connection-status-text');
+  const unavailableMessage = '本机连接暂不可用，请确认电脑与公网连接服务正在运行，或更新连接地址。';
   let configuredUrl = '';
   let useConfiguredUrl = false;
 
@@ -29,6 +32,20 @@
     error.hidden = !message;
   }
 
+  function setConnectionState(state) {
+    connectionStatus.dataset.state = state;
+    connectionStatusText.textContent = state === 'checking'
+      ? '正在检查连接…'
+      : state === 'connected'
+        ? '已连接'
+        : '暂不可用';
+  }
+
+  function restoreSubmitButton() {
+    submitButton.disabled = false;
+    submitButton.querySelector('span').textContent = '安全进入';
+  }
+
   function showConnectionField(value = '') {
     connectionField.hidden = false;
     serviceUrlInput.value = value;
@@ -43,36 +60,65 @@
     } catch { return ''; }
   }
 
-  async function loadConnection() {
-    const configUrl = new URL('./connection.json', location.href);
+  async function checkConnection(serviceUrl) {
+    const base = parseServiceUrl(serviceUrl);
+    if (!base) {
+      setConnectionState('unavailable');
+      setError(unavailableMessage);
+      return false;
+    }
+    setConnectionState('checking');
     try {
+      const response = await fetch(new URL('/auth/status', base.origin), {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000)
+      });
+      if (response.status !== 200) throw new Error('service unavailable');
+      const status = await response.json();
+      if (status?.passwordEnabled !== true) throw new Error('password protection unavailable');
+      setConnectionState('connected');
+      setError('');
+      return true;
+    } catch {
+      setConnectionState('unavailable');
+      setError(unavailableMessage);
+      return false;
+    }
+  }
+
+  async function loadConnection() {
+    let serviceUrl = '';
+    try {
+      const configUrl = new URL('./connection.json', location.href);
       const response = await fetch(configUrl, { cache: 'no-store' });
       if (!response.ok) throw new Error('configuration unavailable');
       const config = await response.json();
       const value = typeof config.serviceUrl === 'string' ? config.serviceUrl.trim() : '';
-      if (value) {
-        if (parseServiceUrl(value)) {
-          configuredUrl = value;
-          useConfiguredUrl = true;
-          connectionField.hidden = true;
-          serviceUrlInput.required = false;
-          changeConnection.hidden = false;
-          return;
-        }
-        setError('预设连接地址无效，请填写本机连接服务提供的 HTTPS 地址。');
+      if (value && parseServiceUrl(value)) {
+        configuredUrl = value;
+        useConfiguredUrl = true;
+        serviceUrl = value;
+        connectionField.hidden = true;
+        serviceUrlInput.required = false;
+        changeConnection.hidden = false;
+      } else {
         showConnectionField(readSavedUrl());
-        return;
+        serviceUrl = serviceUrlInput.value;
       }
-      showConnectionField(readSavedUrl());
     } catch {
-      setError('无法读取连接配置。请填写本机连接服务提供的 HTTPS 地址后继续。');
       showConnectionField(readSavedUrl());
+      serviceUrl = serviceUrlInput.value;
     }
+    await checkConnection(serviceUrl);
   }
 
   changeConnection.addEventListener('click', () => {
     showConnectionField(configuredUrl);
     changeConnection.hidden = true;
+    setConnectionState('unavailable');
     serviceUrlInput.focus();
     setError('');
   });
@@ -84,30 +130,34 @@
     togglePassword.setAttribute('aria-label', visible ? '隐藏密码' : '显示密码');
   });
 
-  form.addEventListener('submit', event => {
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
     setError('');
     const serviceUrl = useConfiguredUrl ? configuredUrl : serviceUrlInput.value;
     const base = parseServiceUrl(serviceUrl);
     if (!base) {
-      event.preventDefault();
       showConnectionField(serviceUrlInput.value);
+      setConnectionState('unavailable');
       setError('请输入有效的 HTTPS 连接地址；本地测试仅接受带端口的 localhost 或 127.0.0.1 地址。');
       serviceUrlInput.focus();
       return;
     }
-    const action = new URL('/auth/login', base.origin);
-    form.action = action.href;
+
+    submitButton.disabled = true;
+    submitButton.querySelector('span').textContent = '正在检查连接…';
+    if (!await checkConnection(base.origin)) {
+      restoreSubmitButton();
+      return;
+    }
+
+    form.action = new URL('/auth/login', base.origin).href;
     if (!useConfiguredUrl) {
       try { localStorage.setItem('ai-studio-service-url', base.origin); } catch { /* Saving the non-secret address is optional. */ }
     }
-    submitButton.disabled = true;
     submitButton.querySelector('span').textContent = '正在验证…';
+    form.submit();
   });
 
-  window.addEventListener('pageshow', () => {
-    submitButton.disabled = false;
-    submitButton.querySelector('span').textContent = '安全进入';
-  });
-
+  window.addEventListener('pageshow', restoreSubmitButton);
   void loadConnection();
 })();
